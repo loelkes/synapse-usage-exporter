@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+
+  server:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+      args:
+        - APP_VERSION=${DOCKER_IMAGE_TAG:-latest}
+        - BUILD_ID=${BUILD_ID:-undefined}
+    image: synapse-usage-exporter:${DOCKER_IMAGE_TAG:-latest}
+    ports:
+      - 5000:5000
+    tmpfs:
+      - /tmp/prometheus
+    environment:
+      - APP_LOG_LEVEL=DEBUG
+      - PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus

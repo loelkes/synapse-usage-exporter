@@ -13,10 +13,12 @@ COPY docker/requirements.txt docker.requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir -r docker.requirements.txt
 
-COPY app app
-COPY docker/entrypoint.sh .
+COPY docker/docker-entrypoint.d /docker-entrypoint.d
+COPY docker/docker-entrypoint.sh /docker-entrypoint.sh
 COPY docker/wsgi.py .
 COPY docker/uwsgi.ini .
 
+COPY app app
+
 EXPOSE 5000
-ENTRYPOINT [ "/bin/sh", "entrypoint.sh" ]
+ENTRYPOINT [ "/bin/sh", "/docker-entrypoint.sh" ]

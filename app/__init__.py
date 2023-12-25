@@ -18,12 +18,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import logging
 from logging.config import dictConfig
 import os
-import sys
 from dotenv import load_dotenv
-from flask import Flask, request, abort, jsonify
-from prometheus_client import multiprocess, make_wsgi_app, Info, Gauge
-from prometheus_client import CollectorRegistry
-from werkzeug.middleware.dispatcher import DispatcherMiddleware
+from flask import Flask, request, jsonify
+from .metrics import Prometheus, INFOS
 
 load_dotenv()  # take environment variables from .env.
 
@@ -55,78 +52,21 @@ app = Flask(__name__)
 app.logger.setLevel(logging.getLogger().level)
 app.config['VERSION'] = os.environ.get('APP_VERSION', 'undefined')
 app.config['BUILD'] = os.environ.get('BUILD_ID', 'undefined')
-# See https://prometheus.github.io/client_python/instrumenting/labels/
-app.config['LABELS_INITIALIZED'] = False  # Set True once labels are initialized.
-app.config['METRICS_PREFIX'] = 'synapse_usage_'
+prometheus = Prometheus(app)
 
-# Initialize Prometheus-Client
-
-registry = CollectorRegistry()
-try:
-    multiprocess.MultiProcessCollector(registry)
-except ValueError as error:
-    app.logger.error(error)
-    app.logger.error('PROMETHEUS_MULTIPROC_DIR: "%s"', os.environ.get('PROMETHEUS_MULTIPROC_DIR'))
-    sys.exit(1)
-
-app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {'/metrics': make_wsgi_app()})
-
-# Initialize metrics
-
-metadata = Info('app_build_info', 'Description of the build')
-metadata.info({'version':  app.config['VERSION'], 'build': app.config['BUILD']})
-
-gauges = [
-    'memory_rss',
-    'cpu_average',
-    'timestamp',
-    'uptime_seconds',
-    'total_users',
-    'total_nonbridged_users',
-    'daily_user_type_native',
-    'daily_user_type_guest',
-    'daily_user_type_bridged',
-    'total_room_count',
-    'daily_active_users',
-    'monthly_active_users',
-    'daily_active_rooms',
-    'daily_active_e2ee_rooms',
-    'daily_messages',
-    'daily_e2ee_messages',
-    'daily_sent_messages',
-    'daily_sent_e2ee_messages',
-    'r30v2_users_all',
-    'r30v2_users_android',
-    'r30v2_users_ios',
-    'r30v2_users_electron',
-    'r30v2_users_web',
-    'cache_factor',
-    'event_cache_size'
-]
-
-infos = [
-    'homeserver',
-    'server_context',
-    'python_version',
-    'database_engine',
-    'database_server_version',
-    'log_level',
-]
-
-metrics = {metric: Gauge(app.config['METRICS_PREFIX'] + metric, metric, infos) for metric in gauges}
 
 @app.route("/report-usage-stats/push", methods=['PUT'])
 def report_usage_stats():
     """Receive usage stats and write to prometheus metrics."""
-    labels = [request.json[key] or 'None' for key in infos]
+    labels = [request.json[key] or 'None' for key in INFOS]
     if not app.config['LABELS_INITIALIZED']:
         app.logger.debug('Initialize labels %s', labels)
     for key, value in request.json.items():
-        if key in infos:
+        if key in INFOS:
             continue
         if not app.config['LABELS_INITIALIZED']:
-            metrics[key].labels(*labels)
-        metrics[key].labels(*labels).set(value)
+            prometheus.metrics[key].labels(*labels)
+        prometheus.metrics[key].labels(*labels).set(value)
         app.logger.debug('Receive value %s for %s', value, key)
     app.config['LABELS_INITIALIZED'] = True
     return jsonify({})
